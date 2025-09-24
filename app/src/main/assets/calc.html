@@ -1,0 +1,350 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
+  <title>Pakistani Cash Counter</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body class="bg-gradient-to-br from-emerald-50 via-green-50 to-teal-50 min-h-screen flex flex-col p-3 space-y-4">
+
+  <!-- Total Card always at top -->
+  <header class="bg-gradient-to-r from-green-600 via-green-500 to-emerald-500 p-4 rounded-xl text-white shadow-md">
+    <div class="flex items-center gap-2 mb-1">
+      <i class="fas fa-wallet text-sm"></i>
+      <span class="text-xs opacity-80">Total Amount</span>
+    </div>
+    <div id="grandTotal" class="text-2xl font-bold mb-3">Rs 0</div>
+    <div class="flex gap-2 text-xs">
+      <button id="copyBtn" class="flex-1 py-2 bg-white/20 hover:bg-white/30 rounded-lg transition">
+        <i class="fas fa-copy"></i> Copy
+      </button>
+      <button id="resetBtn" class="flex-1 py-2 bg-red-500/30 hover:bg-red-500/40 rounded-lg transition">
+        <i class="fas fa-undo"></i> Reset
+      </button>
+    </div>
+  </header>
+
+  <!-- Denominations -->
+  <section>
+    <div class="flex items-center gap-1 mb-1">
+      <h2 class="text-xs font-medium text-gray-700">Notes</h2>
+    </div>
+    <div id="denomGrid" class="grid grid-cols-4 sm:grid-cols-6 gap-1 text-xs"></div>
+  </section>
+
+  <!-- Add Notes -->
+  <section>
+    <div class="flex gap-2">
+      <input id="qty" type="number" min="1" placeholder="Qty"
+        class="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-center text-sm focus:border-green-400 focus:outline-none"  />
+      <button id="addBtn" class="px-4 bg-gradient-to-r from-green-500 to-emerald-500 text-white rounded-lg shadow hover:shadow-md">
+        <i class="fas fa-plus"></i>
+      </button>
+    </div>
+  </section>
+
+  <!-- Breakdown -->
+  <section class="flex-1">
+    <div id="emptyState" class="text-center text-gray-400 text-xs py-6">No notes added yet</div>
+    <div id="breakdownList" class="space-y-2 hidden"></div>
+  </section>
+
+  <!-- Floating footer -->
+<div class="fixed bottom-3 right-3 z-50">
+  <a href="https://haiderr.dev" target="_blank"
+     class="flex items-center gap-1 bg-white/80 backdrop-blur-md border border-green-200 px-3 py-1.5 rounded-full shadow hover:bg-white transition text-xs text-gray-600">
+    <span>Made with</span>
+    <i class="fas fa-heart text-red-400"></i>
+    <span class="font-medium text-green-600">haiderr.dev</span>
+  </a>
+</div>
+
+  <!-- Toasts -->
+  <div id="toastContainer" class="fixed top-4 right-4 left-4 space-y-2 z-50"></div>
+
+  <!-- Confirm Modal -->
+  <div id="confirmModal" class="fixed inset-0 hidden items-center justify-center bg-black/30 z-50">
+    <div class="bg-white rounded-xl shadow-lg p-5 max-w-sm w-full">
+      <div class="text-center">
+        <div class="w-12 h-12 mx-auto mb-3 bg-red-100 rounded-full flex items-center justify-center">
+          <i class="fas fa-exclamation-triangle text-red-500"></i>
+        </div>
+        <h3 class="font-semibold mb-2">Confirm Reset</h3>
+        <p class="text-sm text-gray-600 mb-4">Clear all counts? This cannot be undone.</p>
+        <div class="flex gap-2">
+          <button id="confirmCancel" class="flex-1 py-2 bg-gray-200 rounded-lg">Cancel</button>
+          <button id="confirmReset" class="flex-1 py-2 bg-red-500 text-white rounded-lg">Reset</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const DENOMINATIONS = [5000, 1000, 500, 100, 50, 20, 10];
+    const state = new Map(DENOMINATIONS.map(d => [d, 0]));
+
+    const denomGrid = document.getElementById('denomGrid');
+    const qtyInput = document.getElementById('qty');
+    const addBtn = document.getElementById('addBtn');
+    const breakdownList = document.getElementById('breakdownList');
+    const emptyState = document.getElementById('emptyState');
+    const grandTotalEl = document.getElementById('grandTotal');
+    const toastContainer = document.getElementById('toastContainer');
+    const copyBtn = document.getElementById('copyBtn');
+    const resetBtn = document.getElementById('resetBtn');
+    const confirmModal = document.getElementById('confirmModal');
+    const confirmCancel = document.getElementById('confirmCancel');
+    const confirmReset = document.getElementById('confirmReset');
+
+    let selectedDenom = DENOMINATIONS[0];
+
+   function buildDenomButtons() {
+  denomGrid.innerHTML = '';
+  DENOMINATIONS.forEach(d => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className =
+      'denom-btn px-1 py-4 rounded-md text-[16px] font-semibold transition-all focus-ring';
+    btn.dataset.value = d;
+
+    if (d === selectedDenom) {
+      btn.className +=
+        ' bg-green-500 text-white shadow-md';
+    } else {
+      btn.className +=
+        ' bg-white text-gray-700 border border-gray-300 hover:border-green-400';
+    }
+
+    btn.innerHTML = `
+      <div class="leading-none">${d.toLocaleString('en-PK')}</div>
+    `;
+
+    btn.addEventListener('click', () => selectDenom(d));
+    denomGrid.appendChild(btn);
+  });
+}
+
+    function selectDenom(d) {
+      selectedDenom = d;
+      buildDenomButtons();
+      qtyInput.focus();
+      
+      // Add visual feedback
+      const selectedBtn = document.querySelector(`[data-value="${d}"]`);
+      selectedBtn.classList.add('pulse-effect');
+      setTimeout(() => selectedBtn.classList.remove('pulse-effect'), 600);
+    }
+
+    function formatPKR(n) {
+      return 'Rs ' + n.toLocaleString('en-PK');
+    }
+
+    function updateUI() {
+      breakdownList.innerHTML = '';
+      let hasAny = false;
+      let grand = 0;
+
+      // Create breakdown items
+      for (const d of DENOMINATIONS) {
+        const count = state.get(d) || 0;
+        if (count > 0) {
+          hasAny = true;
+          const subtotal = d * count;
+          grand += subtotal;
+          
+          const item = document.createElement('div');
+          item.className = 'flex items-center justify-between p-4 bg-white rounded-xl shadow-sm hover:shadow-md transition-all slide-up';
+          item.innerHTML = `
+            <div class="flex items-center gap-4">
+              <div class="w-12 h-12 bg-gradient-to-r from-green-100 to-emerald-100 rounded-xl flex items-center justify-center">
+                <i class="fas fa-money-bill text-green-600"></i>
+              </div>
+              <div>
+                <div class="font-semibold text-gray-800">Rs ${d.toLocaleString('en-PK')}</div>
+                <div class="text-sm text-gray-500">${count} note${count > 1 ? 's' : ''}</div>
+              </div>
+            </div>
+            
+          `;
+          breakdownList.appendChild(item);
+        }
+      }
+
+      // Add total row if there are items
+      if (hasAny) {
+        const totalItem = document.createElement('div');
+        
+        breakdownList.appendChild(totalItem);
+      }
+
+      // Show/hide empty state
+      if (hasAny) {
+        emptyState.classList.add('hidden');
+        breakdownList.classList.remove('hidden');
+      } else {
+        emptyState.classList.remove('hidden');
+        breakdownList.classList.add('hidden');
+      }
+
+      // Update grand total
+      grandTotalEl.textContent = formatPKR(grand);
+      
+      // Add pulse effect to grand total when updated
+      if (hasAny) {
+        grandTotalEl.classList.add('pulse-effect');
+        setTimeout(() => grandTotalEl.classList.remove('pulse-effect'), 600);
+      }
+    }
+
+    function addNotes() {
+      const qty = parseInt(qtyInput.value, 10);
+      if (!Number.isFinite(qty) || qty <= 0) {
+        showToast('Please enter a valid quantity', 'error');
+        qtyInput.classList.add('shake-effect');
+        setTimeout(() => qtyInput.classList.remove('shake-effect'), 500);
+        qtyInput.focus();
+        return;
+      }
+
+      const prev = state.get(selectedDenom) || 0;
+      state.set(selectedDenom, prev + qty);
+      updateUI();
+      
+      qtyInput.value = '';
+      qtyInput.focus();
+    }
+
+    function resetAll() {
+      DENOMINATIONS.forEach(d => state.set(d, 0));
+      updateUI();
+      showToast('All counts have been reset', 'info');
+      hideConfirmModal();
+    }
+
+    function showConfirmModal() {
+      confirmModal.classList.remove('hidden');
+      confirmModal.classList.add('flex');
+    }
+
+    function hideConfirmModal() {
+      confirmModal.classList.add('hidden');
+      confirmModal.classList.remove('flex');
+    }
+
+    function buildSummaryText() {
+      let lines = [];
+      let grand = 0;
+      const date = new Date().toLocaleString('en-PK', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+      
+      lines.push('💰 PAKISTANI CASH COUNTER');
+      lines.push('═══════════════════════════');
+      lines.push(`📅 Date: ${date}`);
+      lines.push('');
+      
+      let hasItems = false;
+      for (const d of DENOMINATIONS) {
+        const c = state.get(d) || 0;
+        if (c > 0) {
+          hasItems = true;
+          const subtotal = d * c;
+          lines.push(`Rs ${d.toLocaleString('en-PK')} × ${c} = ${formatPKR(subtotal)}`);
+          grand += subtotal;
+        }
+      }
+      
+      if (hasItems) {
+        lines.push('───────────────────────────');
+        lines.push(`💵 TOTAL: ${formatPKR(grand)}`);
+        lines.push('');
+        lines.push('🔗 Generated by haiderr.dev');
+      }
+      
+      return lines.join('\n');
+    }
+
+    async function copySummary() {
+      const text = buildSummaryText();
+      if (!text.includes('×')) {
+        showToast('No data to copy', 'error');
+        return;
+      }
+      
+      try {
+        await navigator.clipboard.writeText(text);
+        showToast('Summary copied to clipboard!', 'success');
+      } catch (e) {
+        // Fallback for older browsers
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        ta.remove();
+        showToast('Summary copied to clipboard!', 'success');
+      }
+    }
+
+    function showToast(message, type = 'info', timeout = 3000) {
+      const icons = {
+        success: 'fas fa-check-circle',
+        error: 'fas fa-exclamation-circle',
+        info: 'fas fa-info-circle'
+      };
+      
+      const colors = {
+        success: 'bg-green-500',
+        error: 'bg-red-500',
+        info: 'bg-blue-500'
+      };
+      
+      const toast = document.createElement('div');
+      toast.className = `flex items-center gap-3 ${colors[type]} text-white px-5 py-3 rounded-xl shadow-lg font-medium slide-in-right`;
+      toast.innerHTML = `
+        <i class="${icons[type]}"></i>
+        <span>${message}</span>
+      `;
+      
+      toastContainer.appendChild(toast);
+      
+   // Auto remove with fast slide-out
+setTimeout(() => {
+  toast.classList.remove('slide-in-right');
+  toast.classList.add('slide-out-right');
+  setTimeout(() => toast.remove(), 200); // matches CSS animation duration
+}, timeout);
+
+    }
+
+    // Event listeners
+    addBtn.addEventListener('click', addNotes);
+    qtyInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') addNotes();
+    });
+    copyBtn.addEventListener('click', copySummary);
+    resetBtn.addEventListener('click', showConfirmModal);
+    confirmCancel.addEventListener('click', hideConfirmModal);
+    confirmReset.addEventListener('click', resetAll);
+
+    // Close modal on outside click
+    confirmModal.addEventListener('click', (e) => {
+      if (e.target === confirmModal) hideConfirmModal();
+    });
+
+    // Initialize
+    buildDenomButtons();
+    updateUI();
+    qtyInput.focus();
+    
+    // Prevent zoom gestures
+    document.addEventListener('gesturestart', e => e.preventDefault());
+  </script>
+</body>
+</html>
